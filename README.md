@@ -1,13 +1,14 @@
 # MACH-ETH
-The MACH-ETH is an automotive network interface that features one Ethernet port, two CAN FD channels, a LIN channel, a USB and RS-232 port, and multiple I/Os.
+The MACH-ETH is an automotive network interface that features one Ethernet port, two CAN FD channels, a LIN channel, a USB and RS-232 port, and multiple I/Os. The device offers an open communication protocol over Ethernet and USB to access CAN(/FD) and LIN channel. On top of that, the device's firmware is fully programmable by the user.
 
-Web Page: https://www.machsystems.cz/en/products/embedded-networking/gateways-and-bus-converters/mach-eth
+This repository contains an STM32CubeIDE example project that shows the usage of all peripherals. Detailed description can be found in main.c.
+
+Product Page: https://www.machsystems.cz/en/products/embedded-networking/gateways-and-bus-converters/mach-eth
 
 Data Sheet: https://www.machsystems.cz/support/MACH-ETH%20-%20Data%20Sheet.pdf
 
 Product Number: MACH-ETH
 
-An STM32CubeIDE example project that shows the usage of all peripherals.
 
 ### Device Features:
 - 10/100 Ethernet port

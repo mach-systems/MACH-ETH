@@ -7,7 +7,7 @@ Data Sheet: https://www.machsystems.cz/support/MACH-ETH%20-%20Data%20Sheet.pdf
 
 Product Number: MACH-ETH
 
-A STM32CubeIDE example project that shows the usage of all peripherals.
+An STM32CubeIDE example project that shows the usage of all peripherals.
 
 ### Device Features:
 - 10/100 Ethernet port

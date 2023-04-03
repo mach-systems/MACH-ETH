@@ -17,12 +17,25 @@
 #include "tcpServer.h"
 #include <stdio.h>
 
+#define MAX_DATA_SEG1_LEN               32      /* Maximum value of time quanta in Data Bit Segment 1 (HW constraint) */
+#define MAX_DATA_SEG2_LEN               16      /* Maximum value of time quanta in Data Bit Segment 2 (HW constraint) */
+
 extern CONFIGURATION_CAN configCan1;
 extern CONFIGURATION_CAN configCan2;
 
 extern FDCAN_HandleTypeDef hfdcan1;
 extern FDCAN_HandleTypeDef hfdcan3;
 
+static uint32_t paramsToBaud(CanInitStruct* pConf);
+/*
+ * Convert sample point numerical value (in tenths of percent) to SamplePoint
+ * enum value.
+ */
+static SamplePoint coefToSamplePoint(uint16_t c);
+/*
+ * Convert SamplePoint enum to its numerical meaning.
+ */
+static double samplePointToCoef(SamplePoint sp);
 static const uint8_t DLCtoBytes[] =
 { 0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64 };
 
@@ -102,8 +115,17 @@ uint8_t ConfigureCAN(uint8_t channel)
     pfdcan->Init.DataTimeSeg1 = canConf->CanConfiguration.DataTimeSegment1;
     pfdcan->Init.DataTimeSeg2 = canConf->CanConfiguration.DataTimeSegment2;
 
+
     if (HAL_FDCAN_Init(pfdcan) != HAL_OK)
         return CAN_ERROR;
+    /* This enable the CAN FD TX delay compensation it is necessary for baud above 5 Mbauds, in implementation is enabled for values higher then 2 Mbauds */
+    if (paramsToBaud(&canConf->CanConfiguration) > FDCAN_COMPENSATION_THRESHOLD)
+    {
+        uint8_t tdo = (canConf->CanConfiguration.DataTimeSegment1 + 1) & 0x7f;
+        HAL_FDCAN_ConfigTxDelayCompensation(pfdcan, tdo, TDC_FILTER);
+        HAL_FDCAN_EnableTxDelayCompensation(pfdcan);
+    }
+
     return 0;
 }
 
@@ -339,11 +361,13 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
     if (hfdcan == &CAN1)
     {
         blinkLedCan(GREEN_CAN_LED1);
+        LED_CAN1_RED_OFF();
 
     }
     else if (hfdcan == &CAN2)
     {
         blinkLedCan(GREEN_CAN_LED2);
+        LED_CAN2_RED_OFF();
     }
 
     uint8_t datalen = DLCtoBytes[RxHeader.DataLength >> 16];
@@ -391,50 +415,51 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
     CDC_Transmit_HS((uint8_t*) usbSendBuffer, dataWritten);
 }
 
-void HAL_FDCAN_ErrorCallback(FDCAN_HandleTypeDef *hfdcan)
-{
+
+void HAL_FDCAN_ErrorCallback(FDCAN_HandleTypeDef *hfdcan) {
     FDCAN_ProtocolStatusTypeDef ProtocolStatus;
+    uint8_t  errorOnBus = 0;
+
     HAL_FDCAN_GetProtocolStatus(hfdcan, &ProtocolStatus);
-    if (hfdcan == &CAN1)
-    {
 
-        if (ProtocolStatus.RxBRSflag
-                && ProtocolStatus.DataLastErrorCode != FDCAN_PROTOCOL_ERROR_NONE
-                && ProtocolStatus.DataLastErrorCode
-                        != FDCAN_PROTOCOL_ERROR_NO_CHANGE)
-        {
-            blinkLedCan(RED_CAN_LED1);
-        }
-        if (ProtocolStatus.LastErrorCode != FDCAN_PROTOCOL_ERROR_NONE
-                && ProtocolStatus.DataLastErrorCode
-                        != FDCAN_PROTOCOL_ERROR_NO_CHANGE)
-            blinkLedCan(RED_CAN_LED1);
-        if (ProtocolStatus.ErrorPassive == 1)
-            LED_CAN1_RED_ON();
-
+    if(hfdcan == &CAN1){
+        errorOnBus = CAN1_NUM;
     }
-    else if (hfdcan == &CAN2)
+    else if(hfdcan == &CAN2)
     {
-        if (ProtocolStatus.RxBRSflag
-                && ProtocolStatus.DataLastErrorCode != FDCAN_PROTOCOL_ERROR_NONE
-                && ProtocolStatus.DataLastErrorCode
-                        != FDCAN_PROTOCOL_ERROR_NO_CHANGE)
-        {
-            blinkLedCan(RED_CAN_LED2);
-        }
+        errorOnBus = CAN2_NUM;
+    }
+    if ((ProtocolStatus.RxBRSflag
+        && ProtocolStatus.DataLastErrorCode != FDCAN_PROTOCOL_ERROR_NONE
+        && ProtocolStatus.DataLastErrorCode != FDCAN_PROTOCOL_ERROR_NO_CHANGE) || (ProtocolStatus.LastErrorCode != FDCAN_PROTOCOL_ERROR_NONE
+                && ProtocolStatus.LastErrorCode != FDCAN_PROTOCOL_ERROR_NO_CHANGE) ){
 
-        if (ProtocolStatus.LastErrorCode != FDCAN_PROTOCOL_ERROR_NONE
-                && ProtocolStatus.DataLastErrorCode
-                        != FDCAN_PROTOCOL_ERROR_NO_CHANGE)
-            blinkLedCan(RED_CAN_LED2);
-        if (ProtocolStatus.ErrorPassive == 1)
+        // Manually clear the error flag in the peripheral
+        if (hfdcan->ErrorCode & FDCAN_IR_PED)
+            hfdcan->ErrorCode &= ~FDCAN_IR_PED;
+        if (hfdcan->ErrorCode & FDCAN_IR_PEA)
+            hfdcan->ErrorCode &= ~FDCAN_IR_PEA;
+    }
+
+    if (ProtocolStatus.ErrorPassive == 1)
+    {
+        if (hfdcan == &CAN1)
+            LED_CAN1_RED_ON();
+        else if (hfdcan == &CAN2)
             LED_CAN2_RED_ON();
     }
     else
     {
-        return;
+        switch(errorOnBus)
+        {
+            case CAN1_NUM:
+                blinkLedCan(RED_CAN_LED1);
+                break;
+            case CAN2_NUM:
+                blinkLedCan(RED_CAN_LED2);
+                break;
+        }
     }
-
 }
 
 uint8_t IntToDLC(uint8_t dataLength, uint32_t *pDLC)
@@ -497,160 +522,93 @@ uint8_t IntToDLC(uint8_t dataLength, uint32_t *pDLC)
     return CAN_OK;
 }
 
-uint8_t BaudToParametrs(uint8_t baudRate, uint8_t sPoint, uint8_t *prescaler,
-        uint8_t *pTseg1, uint8_t *pTseg2)
-{
-    // This parameters were computed for 40 MHz clock
-
-    switch (baudRate)
+uint8_t BaudToParametrs(uint8_t baudRate, uint8_t *pSPoint, uint8_t *prescaler,
+        uint16_t  *pTseg1, uint8_t *pTseg2, uint8_t dataBr) {
+    uint8_t ret;
+    if (NULL == pSPoint || NULL == prescaler || NULL == pTseg1 || NULL == pTseg2)
+        ret = CAN_INCORRECT_PARAMETER;
+    else
     {
-
-        case BAUDRATE_125k:
-            if (sPoint <= SP_75)
-            {
+        ret = CAN_OK;
+        uint32_t tq;
+        switch (baudRate)
+        {
+            case BAUDRATE_125k:
                 *prescaler = 16;
-                *pTseg1 = 14;
-                *pTseg2 = 5;
-            }
-            else if (sPoint <= SP_82_5)
-            {
-                *prescaler = 16;
-                *pTseg1 = 15;
-                *pTseg2 = 4;
-            }
-            else
-            {
-                *prescaler = 20;
-                *pTseg1 = 13;
-                *pTseg2 = 2;
+                tq = (FDCAN_CLOCK / *prescaler / 125000);
                 break;
-            }
-            break;
-        case BAUDRATE_250k:
-            if (sPoint <= SP_75)
-            {
-                *prescaler = 8;
-                *pTseg1 = 14;
-                *pTseg2 = 5;
-            }
-            else if (sPoint <= SP_82_5)
-            {
-                *prescaler = 8;
-                *pTseg1 = 15;
-                *pTseg2 = 4;
-            }
-            else
-            {
-                *prescaler = 10;
-                *pTseg1 = 13;
-                *pTseg2 = 2;
-            }
-            break;
-        case BAUDRATE_500k:
-            if (sPoint <= SP_75)
-            {
-                *prescaler = 4;
-                *pTseg1 = 14;
-                *pTseg2 = 5;
-            }
-            else if (sPoint <= SP_82_5)
-            {
-                *prescaler = 4;
-                *pTseg1 = 15;
-                *pTseg2 = 4;
-            }
-            else
-            {
-                *prescaler = 5;
-                *pTseg1 = 13;
-                *pTseg2 = 2;
-            }
-            break;
 
-        case BAUDRATE_1M:
-            if (sPoint <= SP_75)
-            {
+            case BAUDRATE_250k:
+                *prescaler = 8;
+                tq = (FDCAN_CLOCK / *prescaler / 250000);
+                break;
+
+            case BAUDRATE_500k:
+                *prescaler = 4;
+                tq = (FDCAN_CLOCK / *prescaler / 500000);
+                break;
+
+            case BAUDRATE_1M:
                 *prescaler = 2;
-                *pTseg1 = 14;
-                *pTseg2 = 5;
-            }
-            else if (sPoint <= SP_82_5)
-            {
-                *prescaler = 2;
-                *pTseg1 = 15;
-                *pTseg2 = 4;
-            }
-            else
-            {
-                *prescaler = 5;
-                *pTseg1 = 6;
-                *pTseg2 = 1;
-            }
-            break;
-        case BAUDRATE_2M:
-            if (sPoint <= SP_75)
-            {
+                tq = (FDCAN_CLOCK / *prescaler / 1000000);
+                break;
+
+            case BAUDRATE_2M:
                 *prescaler = 1;
-                *pTseg1 = 14;
-                *pTseg2 = 5;
-            }
-            else if (sPoint <= SP_82_5)
-            {
+                tq = (FDCAN_CLOCK / *prescaler / 2000000);
+                break;
+
+            case BAUDRATE_4M:
                 *prescaler = 1;
-                *pTseg1 = 15;
-                *pTseg2 = 4;
-            }
-            else
-            {
-                *prescaler = 2;
-                *pTseg1 = 8;
-                *pTseg2 = 1;
-            }
-            break;
-        case BAUDRATE_4M:
-            if (sPoint <= SP_75)
-            {
+                // Sample point rounded to next lowest multiple of 5%
+                tq = (FDCAN_CLOCK / *prescaler / 4000000);
+                break;
+
+            case BAUDRATE_8M:
                 *prescaler = 1;
-                *pTseg1 = 7;
-                *pTseg2 = 2;
-            }
-            else if (sPoint <= SP_82_5)
+                // Sample point rounded to next lowest multiple of 10%
+                tq = (FDCAN_CLOCK / *prescaler / 8000000);
+                break;
+
+            default:
+                ret = CAN_INCORRECT_PARAMETER;
+                break;
+        }
+
+        if (CAN_OK == ret)
+        {
+            *pTseg1 = tq * samplePointToCoef(*pSPoint);
+            *pTseg2 = tq - *pTseg1;
+            // Recalculate the values when out of range - SP can be changed
+            if (dataBr)
             {
-                *prescaler = 1;
-                *pTseg1 = 7;
-                *pTseg2 = 2;
+                if ((*pTseg1 - 1) > MAX_DATA_SEG1_LEN || *pTseg2 > MAX_DATA_SEG2_LEN)
+                {
+                    *prescaler *= 2;
+                    tq /= 2;
+
+                    *pTseg1 = tq * samplePointToCoef(*pSPoint);
+                    *pTseg2 = tq - *pTseg1;
+                }
+                uint16_t sp = (uint16_t) 1000 * (*pTseg1) / (*pTseg1 + *pTseg2);
+                // Adjust Sample Point to its real value - it might have changed slightly
+                *pSPoint = coefToSamplePoint(sp);
             }
-            else
-            {
-                *prescaler = 1;
-                *pTseg1 = 8;
-                *pTseg2 = 1;
-            }
-            break;
-        case BAUDRATE_8M:
-            if (sPoint <= SP_75)
-            {
-                *prescaler = 1;
-                *pTseg1 = 3;
-                *pTseg2 = 1;
-            }
-            else if (sPoint <= SP_82_5)
-            {
-                *prescaler = 1;
-                *pTseg1 = 3;
-                *pTseg2 = 1;
-            }
-            else
-            {
-                *prescaler = 1;
-                *pTseg1 = 3;
-                *pTseg2 = 1;
-            }
-            break;
-        default:
-            break;
+            (*pTseg1)--;
+        }
     }
-    return 0;
+
+    return ret;
+}
+
+double samplePointToCoef(SamplePoint sp)
+{
+    return 0.6 + sp * 0.025;
+}
+
+SamplePoint coefToSamplePoint(uint16_t c)
+{
+    return ((c - 600) / 25);
 }
 
 uint8_t blinkLedCan(uint8_t Led)
@@ -751,3 +709,10 @@ void CanLedTimerCallback(void)
 
 }
 
+uint32_t paramsToBaud(CanInitStruct* pConf)
+{
+    uint32_t ret = 0;
+    if (NULL != pConf && pConf->DataPrescaler != 0 && pConf->DataTimeSegment1 + pConf->DataTimeSegment2 + 1 != 0)
+        ret = (FDCAN_CLOCK / (pConf->DataPrescaler) / (pConf->DataTimeSegment1 + pConf->DataTimeSegment2 + 1));
+    return ret;
+}

@@ -149,6 +149,7 @@ uint16_t GetAdcMeasurement(void);
 #define LED_1_GREEN_GPIO_Port GPIOB
 #define LED_1_RED_Pin GPIO_PIN_9
 #define LED_1_RED_GPIO_Port GPIOB
+
 /* USER CODE BEGIN Private defines */
 #define USB_BUFFER_SIZE     512
 /* Dip-switch reading macros */

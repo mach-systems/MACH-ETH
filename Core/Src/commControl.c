@@ -1,5 +1,5 @@
 /*
- * tcpControl.c
+ * commControl.c
  *
  *  Created on: May 14, 2021
  *      Author: Karel Hevessy
@@ -53,27 +53,48 @@ void UsbDataReceived(uint8_t* pData, uint16_t length)
 
 void sendToCan(uint8_t* pData, uint16_t length, uint8_t channel)
 {
-  for (int i = 0; i < length; i += 8)
+  uint8_t retCode=0;
+  for (int i = 0; i < length; i+=8)
   {
-    uint8_t retCode=0;
-    for (int i = 0; i < length; i+=8) {
-      CanMessageStruct message;
-      message.BRS = false;
-      message.CANChannel  = CAN1_NUM;
-      message.DLC = (length-i) > 8 ? 8 : (length-i);
-      message.Data  = &pData[i];
-      message.ESI = false;
-      message.EXTId = false;
-      message.FDF = false;
-      message.Id  = 0x11;
-      message.RTR = false;
-      retCode = CanSendMessage(&message);
-      while (retCode == CAN_FIFO_FULL){
+    CanMessageStruct message;
+    message.BRS = false;
+    message.CANChannel  = CAN1_NUM;
+    message.DLC = (length-i) > 8 ? 8 : (length-i);
+    message.Data  = &pData[i];
+    message.ESI = false;
+    message.EXTId = false;
+    message.FDF = false;
+    message.Id  = 0x11;
+    message.RTR = false;
+    retCode = CanSendMessage(&message);
+    while (retCode == CAN_FIFO_FULL)
+    {
         osDelay(10);
         retCode = CanSendMessage(&message);
-      }
     }
-    return;
   }
   return;
+}
+
+void WaitAndDrainQueue(uint8_t* pDest, uint16_t size, uint16_t* pResSize,
+                       osMessageQueueId_t queueHandle)
+{
+    if ((NULL != pDest) && (NULL != pResSize))
+    {
+        GenericMessageType elem;
+        osStatus_t getState;
+
+        while ((getState = osMessageQueueGet(queueHandle, &elem, NULL, 0xffff)) != osOK);
+        elem.Datalen = (elem.Datalen > MAX_CMD_LEN) ? MAX_CMD_LEN : elem.Datalen;
+        *pResSize = elem.Datalen;
+        memcpy(pDest, elem.Data, elem.Datalen);
+
+        while (*pResSize < (size - MAX_CMD_LEN) &&
+               (osOK == osMessageQueueGet(queueHandle, &elem, NULL, 0)))
+        {
+            elem.Datalen = (elem.Datalen > MAX_CMD_LEN) ? MAX_CMD_LEN : elem.Datalen;
+            memcpy(pDest + *pResSize, elem.Data, elem.Datalen);
+            *pResSize += elem.Datalen;
+        }
+    }
 }

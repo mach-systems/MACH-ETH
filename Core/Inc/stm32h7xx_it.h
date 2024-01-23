@@ -58,14 +58,12 @@ void FDCAN1_IT0_IRQHandler(void);
 void FDCAN1_IT1_IRQHandler(void);
 void USART3_IRQHandler(void);
 void TIM8_UP_TIM13_IRQHandler(void);
-void TIM8_TRG_COM_TIM14_IRQHandler(void);
 void UART5_IRQHandler(void);
 void TIM6_DAC_IRQHandler(void);
 void TIM7_IRQHandler(void);
 void ETH_IRQHandler(void);
 void ETH_WKUP_IRQHandler(void);
 void OTG_HS_IRQHandler(void);
-void TIM16_IRQHandler(void);
 void FDCAN3_IT0_IRQHandler(void);
 void FDCAN3_IT1_IRQHandler(void);
 /* USER CODE BEGIN EFP */

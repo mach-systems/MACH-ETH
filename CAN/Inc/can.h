@@ -11,17 +11,20 @@
 #include "stdbool.h"
 #include "main.h"
 
-#define CAN_MAX_DATALEN       64
+#define CAN_MAX_DATALEN                 64
 
-#define CAN1                  hfdcan3
-#define CAN2                  hfdcan1
+#define CAN1                            hfdcan3
+#define CAN2                            hfdcan1
 
-#define CAN1_NUM              0
-#define CAN2_NUM              1
+#define CAN1_NUM                        0
+#define CAN2_NUM                        1
 
-#define	MESSAGE_HEADER_SIZE           5
-#define MESSAGE_HEADER_SIZE_EXT_ID    7
-#define CONF_MESSAGE_SIZE_CAN         11
+#define RX_FIFO_SIZE                    64
+#define TX_FIFO_SIZE                    32
+
+#define	MESSAGE_HEADER_SIZE             5
+#define MESSAGE_HEADER_SIZE_EXT_ID      7
+#define CONF_MESSAGE_SIZE_CAN           11
 
 #define CAN_OK                          0
 #define CAN_ERROR                       1
@@ -37,8 +40,8 @@
 
 #define FDCAN_CLOCK                     80000000    // Peripheral has 80 MHz clock
 
-#define GREEN_BLINK_DURATION          100
-#define RED_BLINK_DURATION            300
+#define GREEN_BLINK_DURATION            100
+#define RED_BLINK_DURATION              300
 
 #define FDCAN_COMPENSATION_THRESHOLD    2000000 /* Delay compensation shall be used for Data baud rate above 2 Mbit */
 

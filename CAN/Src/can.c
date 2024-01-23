@@ -100,10 +100,16 @@ uint8_t ConfigureCAN(uint8_t channel)
     pfdcan->Init.DataSyncJumpWidth = canConf->CanConfiguration.DataSJW;
 
     pfdcan->Init.TxElmtSize = FDCAN_DATA_BYTES_64;
-    pfdcan->Init.TxBuffersNbr = 8;
+    pfdcan->Init.TxBuffersNbr = 0;
     pfdcan->Init.RxFifo0ElmtSize = FDCAN_DATA_BYTES_64;
-    pfdcan->Init.RxBuffersNbr = 8;
-    pfdcan->Init.AutoRetransmission = DISABLE;
+    pfdcan->Init.RxBuffersNbr = 0;
+    pfdcan->Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
+    pfdcan->Init.ExtFiltersNbr = 0;
+    pfdcan->Init.MessageRAMOffset = 0;
+    pfdcan->Init.RxFifo0ElmtsNbr = RX_FIFO_SIZE;
+    pfdcan->Init.AutoRetransmission = ENABLE;
+    pfdcan->Init.TxFifoQueueElmtsNbr = TX_FIFO_SIZE;
+    pfdcan->Init.TxEventsNbr = TX_FIFO_SIZE;
 
     pfdcan->Init.NominalPrescaler =
             canConf->CanConfiguration.ArbitrationPrescaler;
@@ -229,66 +235,65 @@ uint8_t CanSendMessage(CanMessageStruct *message)
 {
 
     bool messageProtocol = false; // Check if message must be send by FDCAN
-    FDCAN_TxHeaderTypeDef TxHeader;
+    FDCAN_TxHeaderTypeDef txHeader;
     HAL_StatusTypeDef ret;
 
-    TxHeader.Identifier = message->Id;
+    txHeader.Identifier = message->Id;
     if (!message->EXTId)
     {
-        TxHeader.IdType = FDCAN_STANDARD_ID;
+        txHeader.IdType = FDCAN_STANDARD_ID;
     }
     else
     {
-        TxHeader.IdType = FDCAN_EXTENDED_ID;
+        txHeader.IdType = FDCAN_EXTENDED_ID;
     }
 
     if (!message->RTR)
     {
-        TxHeader.TxFrameType = FDCAN_DATA_FRAME;
+        txHeader.TxFrameType = FDCAN_DATA_FRAME;
     }
     else
     {
-        TxHeader.TxFrameType = FDCAN_REMOTE_FRAME;
+        txHeader.TxFrameType = FDCAN_REMOTE_FRAME;
     }
 
     if (!message->BRS)
     {
-        TxHeader.BitRateSwitch = FDCAN_BRS_OFF;
+        txHeader.BitRateSwitch = FDCAN_BRS_OFF;
     }
     else
     {
-        TxHeader.BitRateSwitch = FDCAN_BRS_ON;
+        txHeader.BitRateSwitch = FDCAN_BRS_ON;
         messageProtocol = true;
     }
 
     if (!message->ESI)
     {
-        TxHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+        txHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
     }
     else
     {
-        TxHeader.ErrorStateIndicator = FDCAN_ESI_PASSIVE;
+        txHeader.ErrorStateIndicator = FDCAN_ESI_PASSIVE;
         messageProtocol = true;
-
     }
 
     if (!message->FDF)
     {
-        TxHeader.FDFormat = FDCAN_CLASSIC_CAN;
+        txHeader.FDFormat = FDCAN_CLASSIC_CAN;
     }
     else
     {
-        TxHeader.FDFormat = FDCAN_FD_CAN;
+        txHeader.FDFormat = FDCAN_FD_CAN;
         messageProtocol = true;
     }
 
-    if (IntToDLC(message->DLC, &TxHeader.DataLength))
+    if (IntToDLC(message->DLC, &txHeader.DataLength))
     {
         return CAN_WRONG_DLC;
     }
 
-    TxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-    TxHeader.MessageMarker = 0;
+    txHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    txHeader.MessageMarker = 0;
 
     if (message->CANChannel == CAN1_NUM)
     {
@@ -296,8 +301,7 @@ uint8_t CanSendMessage(CanMessageStruct *message)
             return CAN_WRONG_PROTOCOL;
         if (!canChannel1Run)
             return CAN_IS_NOT_RUNNING;
-        ret = HAL_FDCAN_AddMessageToTxFifoQ(&CAN1,
-                (FDCAN_TxHeaderTypeDef*) &TxHeader, message->Data);
+        ret = HAL_FDCAN_AddMessageToTxFifoQ(&CAN1, &txHeader, message->Data);
         if (ret != HAL_OK)
         {
             blinkLedCan(RED_CAN_LED1);
@@ -318,11 +322,11 @@ uint8_t CanSendMessage(CanMessageStruct *message)
         if (!canChannel2Run)
             return CAN_IS_NOT_RUNNING;
         ret = HAL_FDCAN_AddMessageToTxFifoQ(&CAN2,
-                (FDCAN_TxHeaderTypeDef*) &TxHeader, message->Data);
+                (FDCAN_TxHeaderTypeDef*) &txHeader, message->Data);
         if (ret != HAL_OK)
         {
             blinkLedCan(RED_CAN_LED2);
-            if ( CAN1.ErrorCode == HAL_FDCAN_ERROR_FIFO_FULL)
+            if ( CAN2.ErrorCode == HAL_FDCAN_ERROR_FIFO_FULL)
                 return CAN_FIFO_FULL;
             else
                 return CAN_ERROR;
@@ -334,7 +338,7 @@ uint8_t CanSendMessage(CanMessageStruct *message)
     }
     else
     {
-        //Channel not implemented error
+        // Channel not implemented error
         return CAN_CHANNEL_NOT_IMPLEMENTED;
     }
 
@@ -346,73 +350,66 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 {
     FDCAN_RxHeaderTypeDef RxHeader;
     uint8_t RxData[CAN_MAX_DATALEN];
-    if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET)
+    /* Retrieve Rx messages from RX FIFO0 */
+    while ((HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO0) > 0)
+        && (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK))
     {
-        /* Retrieve Rx messages from RX FIFO0 */
-        if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &RxHeader, RxData)
-                != HAL_OK)
+        if (hfdcan == &CAN1)
         {
+            blinkLedCan(GREEN_CAN_LED1);
+            LED_CAN1_RED_OFF();
+
+        }
+        else if (hfdcan == &CAN2)
+        {
+            blinkLedCan(GREEN_CAN_LED2);
+            LED_CAN2_RED_OFF();
+        }
+
+        uint8_t datalen = DLCtoBytes[RxHeader.DataLength >> 16];
+
+        /* It is strongly suggested to keep the possibility to jump to System Booloader from application */
+        if (RxHeader.Identifier == 0x1fffffff && datalen == 4 && RxData[0] == 0
+                && RxData[1] == 1 && RxData[2] == 2 && RxData[3] == 3)
+        {
+#ifdef Bootloader   /* HTTP Bootloader */
+            /* Cannot go to bootloader directly from ISR */
+            BootloaderRequest = 2;
+#else
+#ifdef NoBootloader /* STM System Bootloader */
+            BootloaderRequest = 1;
+#endif
+#endif
+
             return;
         }
 
-        /* Respond back with the same data and header */
-    }
-
-    if (hfdcan == &CAN1)
-    {
-        blinkLedCan(GREEN_CAN_LED1);
-        LED_CAN1_RED_OFF();
-
-    }
-    else if (hfdcan == &CAN2)
-    {
-        blinkLedCan(GREEN_CAN_LED2);
-        LED_CAN2_RED_OFF();
-    }
-
-    uint8_t datalen = DLCtoBytes[RxHeader.DataLength >> 16];
-
-    /* It is strongly suggested to keep the possibility to jump to System Booloader from application */
-    if (RxHeader.Identifier == 0x1fffffff && datalen == 4 && RxData[0] == 0
-            && RxData[1] == 1 && RxData[2] == 2 && RxData[3] == 3)
-    {
-#ifdef Bootloader   /* HTTP Bootloader */
-        /* Cannot go to bootloader directly from ISR */
-        BootloaderRequest = 2;
-#else
-#ifdef NoBootloader /* STM System Bootloader */
-        BootloaderRequest = 1;
-#endif
-#endif
-
-        return;
-    }
-
-    /* Send the information about received CAN frame to the virtual COM port */
-    char usbSendBuffer[USB_BUFFER_SIZE];
-    uint8_t dataWritten = 0;
-    dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
-            "ID: %lx, ", RxHeader.Identifier);
-    char *chan = (hfdcan == &CAN1) ? "CAN1" : "CAN2";
-    dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
-            "channel: %s, ", chan);
-    dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
-            "datalen: %d, ", datalen);
-    dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
-            "data: ");
-    for (uint8_t i = 0; i < datalen; i++)
-    {
+        /* Send the information about received CAN frame to the virtual COM port */
+        char usbSendBuffer[USB_BUFFER_SIZE];
+        uint8_t dataWritten = 0;
         dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
-                "%x", RxData[i]);
-        if (i != datalen - 1)
-            dataWritten += snprintf(usbSendBuffer + dataWritten,
-                    USB_BUFFER_SIZE, ", ");
-    }
-    dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
-            "\r\n");
+                "ID: %lx, ", RxHeader.Identifier);
+        char *chan = (hfdcan == &CAN1) ? "CAN1" : "CAN2";
+        dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
+                "channel: %s, ", chan);
+        dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
+                "datalen: %d, ", datalen);
+        dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
+                "data: ");
+        for (uint8_t i = 0; i < datalen; i++)
+        {
+            dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
+                    "%x", RxData[i]);
+            if (i != datalen - 1)
+                dataWritten += snprintf(usbSendBuffer + dataWritten,
+                        USB_BUFFER_SIZE, ", ");
+        }
+        dataWritten += snprintf(usbSendBuffer + dataWritten, USB_BUFFER_SIZE,
+                "\r\n");
 
-    TcpEnqueueResponse((uint8_t*) usbSendBuffer, dataWritten);
-    CDC_Transmit_HS((uint8_t*) usbSendBuffer, dataWritten);
+        TcpEnqueueResponse((uint8_t*) usbSendBuffer, dataWritten);
+        CDC_Transmit_HS((uint8_t*) usbSendBuffer, dataWritten);
+    }
 }
 
 

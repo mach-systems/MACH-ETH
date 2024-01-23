@@ -12,6 +12,7 @@
 #include "eeprom_emul.h"
 
 CONFIGURATION Config;
+EXTRA_CONFIGURATION ExtraConfig;
 PRODUCT_INFORMATION ProductInfo;
 CONFIGURATION_CAN configCan1;
 CONFIGURATION_CAN configCan2;
@@ -23,7 +24,9 @@ uint16_t VirtAddVarTab[NB_OF_VAR];
 
 // Load address is 0x80bffe0
 const volatile uint16_t __attribute__((section(".version"))) FirmwareVersion  = VERSION_MINOR + (256 * VERSION_MAJOR);
-const volatile uint64_t __attribute__((section(".signature"))) Signature = 0x55aa55aa55aa55aa;
+#ifdef Bootloader
+    const volatile uint64_t __attribute__((section(".signature"))) Signature = 0x55aa55aa55aa55aa;
+#endif
 
 
 void InitNonVolatileData(void)
@@ -41,6 +44,8 @@ void InitNonVolatileData(void)
 
   if (!ReadConfiguration())
     DefaultConfiguration();
+  if (!ReadExtraConfiguration())
+    DefaultExtraConfiguration();
   if (!ReadConfigurationLIN())
     DefaultConfigurationLIN();
   if (!ReadConfigurationCAN1())
@@ -89,11 +94,38 @@ uint8_t ReadConfiguration(void)
   return ret;
 }
 
+uint8_t ReadExtraConfiguration(void)
+{
+  uint8_t ret = 0;
+  uint16_t i, readData, status = 0;
+  EXTRA_CONFIGURATION tmp;
+  for (i = 0; i < sizeof(EXTRA_CONFIGURATION) / 2; i++)
+    status |= EE_ReadVariable(EXTRA_CONFIG_BASE_ADDR + i, ((uint16_t*) &tmp + i));
+
+  if (status == 0)
+    status |= EE_ReadVariable(EXTRA_CONFIG_BASE_ADDR + i, &readData);
+  ExtraConfig = tmp;
+
+  if (status == 0 && readData == ArrayChecksum((uint8_t*) &tmp, sizeof(EXTRA_CONFIGURATION)))
+    ret = 1;
+
+  return ret;
+}
+
 CONFIGURATION GetConfiguration(void)
 {
   return Config;
 }
 
+EXTRA_CONFIGURATION GetExtraConfiguration(void)
+{
+  return ExtraConfig;
+}
+
+const EXTRA_CONFIGURATION* GetExtraConfigurationAddr(void)
+{
+  return &ExtraConfig;
+}
 
 CONFIGURATION_LIN GetConfigurationLIN(void)
 {
@@ -123,47 +155,65 @@ uint8_t WriteConfiguration(void)
   return (status == 0);
 }
 
+uint8_t WriteExtraConfiguration(void)
+{
+  uint16_t i, status = 0;
+  for (i = 0; i < sizeof(EXTRA_CONFIGURATION) / 2; i++)
+    status |= EE_WriteVariable(EXTRA_CONFIG_BASE_ADDR + i, *((uint16_t*) &ExtraConfig + i));
+
+  if (status == 0)
+    status |= EE_WriteVariable(EXTRA_CONFIG_BASE_ADDR + i, ArrayChecksum((uint8_t*) &ExtraConfig, sizeof(EXTRA_CONFIGURATION)));
+
+  return (status == 0);
+}
+
 uint8_t WriteConfigurationLIN(void)
 {
-  uint16_t i;
+  uint16_t i, status = 0;
   for (i = 0; i < sizeof(CONFIGURATION_LIN) / 2; i++)
-    EE_WriteVariable(LIN_CONFIG_BASE_ADDR + i, *((uint16_t*) &configLin + i));
+    status |= EE_WriteVariable(LIN_CONFIG_BASE_ADDR + i, *((uint16_t*) &configLin + i));
 
-  EE_WriteVariable(LIN_CONFIG_BASE_ADDR + i, ArrayChecksum((uint8_t*) &configLin, sizeof(CONFIGURATION_LIN)));
-  return 1;
+  if (status == 0)
+      status |= EE_WriteVariable(LIN_CONFIG_BASE_ADDR + i, ArrayChecksum((uint8_t*) &configLin, sizeof(CONFIGURATION_LIN)));
+
+  return (status == 0);
 }
 
 uint8_t WriteConfigurationCAN1(void)
 {
-  uint16_t i;
+  uint16_t i, status = 0;
   for (i = 0; i < sizeof(CONFIGURATION_CAN) / 2; i++)
-    EE_WriteVariable(CAN1_CONFIG_BASE_ADDR + i, *((uint16_t*) &configCan1 + i));
+    status |= EE_WriteVariable(CAN1_CONFIG_BASE_ADDR + i, *((uint16_t*) &configCan1 + i));
 
-  EE_WriteVariable(CAN1_CONFIG_BASE_ADDR + i, ArrayChecksum((uint8_t*) &configCan1, sizeof(CONFIGURATION_CAN)));
-  return 1;
+  if (status == 0)
+      status |= EE_WriteVariable(CAN1_CONFIG_BASE_ADDR + i, ArrayChecksum((uint8_t*) &configCan1, sizeof(CONFIGURATION_CAN)));
+
+  return (status == 0);
 }
 uint8_t WriteConfigurationCAN2(void)
 {
-  uint16_t i;
+  uint16_t i, status = 0;
   for (i = 0; i < sizeof(CONFIGURATION_CAN) / 2; i++)
-    EE_WriteVariable(CAN2_CONFIG_BASE_ADDR + i, *((uint16_t*) &configCan2 + i));
+    status |= EE_WriteVariable(CAN2_CONFIG_BASE_ADDR + i, *((uint16_t*) &configCan2 + i));
 
-  EE_WriteVariable(CAN2_CONFIG_BASE_ADDR + i, ArrayChecksum((uint8_t*) &configCan2, sizeof(CONFIGURATION_CAN)));
-  return 1;
+  if (status == 0)
+      status |= EE_WriteVariable(CAN2_CONFIG_BASE_ADDR + i, ArrayChecksum((uint8_t*) &configCan2, sizeof(CONFIGURATION_CAN)));
+
+  return (status == 0);
 }
 
 uint8_t ReadConfigurationLIN(void)
 {
   uint8_t ret = 0;
-  uint16_t i, readData;
+  uint16_t i, readData, status = 0;
   CONFIGURATION_LIN tmp;
   for (i = 0; i < sizeof(CONFIGURATION_LIN) / 2; i++)
-    EE_ReadVariable(LIN_CONFIG_BASE_ADDR + i, ((uint16_t*) &tmp + i));
+      status |= EE_ReadVariable(LIN_CONFIG_BASE_ADDR + i, ((uint16_t*) &tmp + i));
 
-  EE_ReadVariable(LIN_CONFIG_BASE_ADDR + i, &readData);
+  status |= EE_ReadVariable(LIN_CONFIG_BASE_ADDR + i, &readData);
   configLin = tmp;
 
-  if (readData == ArrayChecksum((uint8_t*) &tmp, sizeof(CONFIGURATION_LIN)))
+  if (status == 0 && readData == ArrayChecksum((uint8_t*) &tmp, sizeof(CONFIGURATION_LIN)))
   {
     ret = 1;
   }
@@ -173,15 +223,15 @@ uint8_t ReadConfigurationLIN(void)
 uint8_t ReadConfigurationCAN1(void)
 {
   uint8_t ret = 0;
-  uint16_t i, readData;
+  uint16_t i, readData, status = 0;
   CONFIGURATION_CAN tmp;
   for (i = 0; i < sizeof(CONFIGURATION_CAN) / 2; i++)
-    EE_ReadVariable(CAN1_CONFIG_BASE_ADDR + i, ((uint16_t*) &tmp + i));
+      status |= EE_ReadVariable(CAN1_CONFIG_BASE_ADDR + i, ((uint16_t*) &tmp + i));
 
-  EE_ReadVariable(CAN1_CONFIG_BASE_ADDR + i, &readData);
+  status |= EE_ReadVariable(CAN1_CONFIG_BASE_ADDR + i, &readData);
   configCan1 = tmp;
 
-  if (readData == ArrayChecksum((uint8_t*) &tmp, sizeof(CONFIGURATION_CAN)))
+  if (status == 0 && readData == ArrayChecksum((uint8_t*) &tmp, sizeof(CONFIGURATION_CAN)))
   {
     ret = 1;
   }
@@ -191,15 +241,15 @@ uint8_t ReadConfigurationCAN1(void)
 uint8_t ReadConfigurationCAN2(void)
 {
   uint8_t ret = 0;
-  uint16_t i, readData;
+  uint16_t i, readData, status = 0;
   CONFIGURATION_CAN tmp;
   for (i = 0; i < sizeof(CONFIGURATION_CAN) / 2; i++)
-    EE_ReadVariable(CAN2_CONFIG_BASE_ADDR + i, ((uint16_t*) &tmp + i));
+      status |= EE_ReadVariable(CAN2_CONFIG_BASE_ADDR + i, ((uint16_t*) &tmp + i));
 
-  EE_ReadVariable(CAN2_CONFIG_BASE_ADDR + i, &readData);
+  status |= EE_ReadVariable(CAN2_CONFIG_BASE_ADDR + i, &readData);
   configCan2 = tmp;
 
-  if (readData == ArrayChecksum((uint8_t*) &tmp, sizeof(CONFIGURATION_CAN)))
+  if (status == 0 && readData == ArrayChecksum((uint8_t*) &tmp, sizeof(CONFIGURATION_CAN)))
   {
     ret = 1;
   }
@@ -264,7 +314,7 @@ uint8_t ArraySum(const uint8_t* pArr, uint8_t size)
   return sum;
 }
 
-CRC_DATATYPE ArrayChecksum(const uint8_t* pArr, uint8_t size)
+CRC_DATATYPE ArrayChecksum(const uint8_t* pArr, uint16_t size)
 {
   CRC_DATATYPE crc = 0;
   AddToCrc(&crc, pArr, size);
@@ -287,6 +337,16 @@ void DefaultConfiguration(void)
   // MAC address does not have any default value
 }
 
+void DefaultExtraConfiguration(void)
+{
+  ExtraConfig.DefaultGateway[0] = DEFAULT_GW0;
+  ExtraConfig.DefaultGateway[1] = DEFAULT_GW1;
+  ExtraConfig.DefaultGateway[2] = DEFAULT_GW2;
+  ExtraConfig.DefaultGateway[3] = DEFAULT_GW3;
+
+  memset((void*) ExtraConfig.Reserved, 0xff, EXTRA_CONFIG_RESERVED_SIZE);
+}
+
 uint8_t ConfigChangeMac(uint8_t* pData)
 {
   Config.MacAddress[0] = pData[0];
@@ -305,6 +365,15 @@ uint8_t ConfigChangeIp(const uint8_t* pData)
   Config.IpAddress[2] = pData[2];
   Config.IpAddress[3] = pData[3];
   return 1;
+}
+
+uint8_t ConfigChangeGw(const uint8_t* pData)
+{
+    ExtraConfig.DefaultGateway[0] = pData[0];
+    ExtraConfig.DefaultGateway[1] = pData[1];
+    ExtraConfig.DefaultGateway[2] = pData[2];
+    ExtraConfig.DefaultGateway[3] = pData[3];
+    return 1;
 }
 
 void MaskToArray(uint8_t encoded, uint8_t* pArr)

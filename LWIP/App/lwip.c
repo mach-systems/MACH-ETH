@@ -30,7 +30,6 @@
 
 /* USER CODE BEGIN 0 */
 #include "ethernet.h"
-#include <igmp.h>
 #include "config.h"
 /* USER CODE END 0 */
 /* Private function prototypes -----------------------------------------------*/
@@ -85,6 +84,15 @@ void MX_LWIP_Init(void)
   IP_ADDRESS[1] = config.IpAddress[1];
   IP_ADDRESS[2] = config.IpAddress[2];
   IP_ADDRESS[3] = config.IpAddress[3];
+  NETMASK_ADDRESS[0] = config.IpMask[0];
+  NETMASK_ADDRESS[1] = config.IpMask[1];
+  NETMASK_ADDRESS[2] = config.IpMask[2];
+  NETMASK_ADDRESS[3] = config.IpMask[3];
+  const EXTRA_CONFIGURATION* pExtraConfig = GetExtraConfigurationAddr();
+  GATEWAY_ADDRESS[0] = pExtraConfig->DefaultGateway[0];
+  GATEWAY_ADDRESS[1] = pExtraConfig->DefaultGateway[1];
+  GATEWAY_ADDRESS[2] = pExtraConfig->DefaultGateway[2];
+  GATEWAY_ADDRESS[3] = pExtraConfig->DefaultGateway[3];
 /* USER CODE END IP_ADDRESSES */
 
   /* Initilialize the LwIP stack with RTOS */
@@ -101,16 +109,8 @@ void MX_LWIP_Init(void)
   /* Registers the default network interface */
   netif_set_default(&gnetif);
 
-  if (netif_is_link_up(&gnetif))
-  {
-    /* When the netif is fully configured this function must be called */
-    netif_set_up(&gnetif);
-  }
-  else
-  {
-    /* When the netif link is down this function must be called */
-    netif_set_down(&gnetif);
-  }
+  /* We must always bring the network interface up connection or not... */
+  netif_set_up(&gnetif);
 
   /* Set the link callback function, this function is called on change of link status*/
   netif_set_link_callback(&gnetif, ethernet_link_status_updated);
@@ -125,53 +125,16 @@ void MX_LWIP_Init(void)
 /* USER CODE END H7_OS_THREAD_NEW_CMSIS_RTOS_V2 */
 
 /* USER CODE BEGIN 3 */
-//  /* Override the default low_level_output() function */
-//  gnetif.linkoutput = low_level_output_user;
-//  /* Filter for passing all multicast frames */
-//  heth.Instance->MACPFR |= ETH_MACPFR_PM;
-//  /* Add multicast support */
-//  netif_set_flags(&gnetif, NETIF_FLAG_IGMP);
-//  /* Join a multicast group */
-//  igmp_start(&gnetif);
-//  ip4_addr_t groupaddr;
-//  uint8_t addr[4];
-//  addr[0] = 224;
-//  addr[1] = addr[2] = 0;
-//  addr[3] = 3;
-//  IP4_ADDR(&groupaddr, addr[0], addr[1], addr[2], addr[3]);
-//  err_t ret = igmp_joingroup_netif(&gnetif, &groupaddr);
-//  if (ret != 0)
-//  {
-//
-//  }
-////
+  /* Override the default low_level_output() function */
+  /* Note: overriding not needed in the newer HAL ethernet version */
+  //gnetif.linkoutput = low_level_output;
 
-
-    /* Override the default low_level_output() function */
-     gnetif.linkoutput = low_level_output_user;
-
-     /* Add multicast support */
-     //gnetif.flags |= NETIF_FLAG_IGMP;
-     /* Join a multicast group */
-//     igmp_start(&gnetif);
-//     ip4_addr_t groupaddr;
-//     uint8_t addr[4];
-//     addr[0] = 224;
-//     addr[1] = addr[2] = 0;
-//     addr[3] = 3;
-//     IP4_ADDR(&groupaddr, addr[0], addr[1], addr[2], addr[3]);
-//     err_t ret = igmp_joingroup_netif(&gnetif, &groupaddr);
-//     if (ret != 0)
-//     {
-//
-//     }
-
-     /* Filter for passing all multicast frames */
-     //heth.Instance->MACPFR |= ETH_MACPFR_PM;
-     ETH_MACFilterConfigTypeDef filter;
-     HAL_ETH_GetMACFilterConfig(&heth, &filter);
-     filter.PassAllMulticast = 1;
-     HAL_ETH_SetMACFilterConfig(&heth, &filter);
+  /* Filter for passing all multicast frames */
+  //heth.Instance->MACPFR |= ETH_MACPFR_PM;
+  ETH_MACFilterConfigTypeDef filter;
+  HAL_ETH_GetMACFilterConfig(&heth, &filter);
+  filter.PassAllMulticast = 1;
+  HAL_ETH_SetMACFilterConfig(&heth, &filter);
 /* USER CODE END 3 */
 }
 

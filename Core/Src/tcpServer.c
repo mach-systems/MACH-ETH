@@ -30,7 +30,7 @@
  *
  */
 /* Includes ------------------------------------------------------------------*/
-#include <commControl.h>
+#include "commControl.h"
 #include "tcpServer.h"
 #include "packetControl.h"
 #include "lwip/opt.h"
@@ -47,18 +47,20 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
-#define TCPECHO_THREAD_PRIO  (osPriorityNormal)
+#define TCPECHO_THREAD_PRIO     (osPriorityNormal)
 #define TCPSEND_THREAD_PRIO     (osPriorityNormal)
 
 /* Private macro -------------------------------------------------------------*/
-#define RESPONSE_BUFFER_SIZE    384
 #define RECV_TIMEOUT            1000    /* 1 second timeout */
+#define SEND_TIMEOUT            1000
 /* Private variables ---------------------------------------------------------*/
-
+static uint8_t tcpConnectionError;
+uint16_t tcpTxLength;
+uint8_t tcpTxBuffer[RESPONSE_BUFFER_SIZE];
 /* Private function prototypes -----------------------------------------------*/
 osStatus_t tcpSendResponse(uint8_t* pData, uint16_t length);
 /* Private functions ---------------------------------------------------------*/
-struct netconn *newconn;
+static struct netconn *newconn;
 
 void TcpServerThread(void *arg)
 {
@@ -89,6 +91,7 @@ void TcpServerThread(void *arg)
       osDelay(100);
     /* Grab new connection. */
     err = netconn_accept(conn, &newconn);
+    tcpConnectionError = 0;
     /* Process the new connection. */
     if (err == ERR_OK)
     {
@@ -96,17 +99,22 @@ void TcpServerThread(void *arg)
       void *data;
       u16_t len;
 rcv:
-      netconn_set_recvtimeout(newconn, 1000);
+      netconn_set_recvtimeout(newconn, RECV_TIMEOUT);
       err_t error = netconn_recv(newconn, &buf);
       if (!netif_is_link_up(&gnetif))
       {
         /* The cable was disconnected, so we must manually inform stack about the abort */
         /* If this function is not called, device runs out of memory!!! */
-        tcp_abort(newconn->pcb.tcp);
+        tcpConnectionError = 1;
       }
 
-      if (error == ERR_OK || error == ERR_TIMEOUT) /* Data received or nothing happened */
-      {
+      /* netconn_peer() and netconn_err() are here to try to catch as much errors as possible */
+      ip_addr_t peerAddr;
+      u16_t peerPort;
+      err_t peerErr = netconn_peer(newconn, &peerAddr, &peerPort);
+      if (((error == ERR_OK) || (error == ERR_TIMEOUT)) && (0 == tcpConnectionError)
+          && (ERR_OK == peerErr) && (ERR_OK == netconn_err(newconn)))
+      { /* Data received or nothing happened */
         /* If timeout, buffer will be empty */
         if (buf != NULL)
         {
@@ -120,11 +128,18 @@ rcv:
       }
       else
       {
+        tcpConnectionError = 0;
+        if (NULL !=  newconn->pcb.tcp)
+        {
+            /* Issue abort, this may not be always needed */
+            tcp_abort(newconn->pcb.tcp);
+        }
         /* Some other error - e.g. ERR_ABRT (-13) */
         netbuf_delete(buf);
         /* Close connection and discard connection identifier. */
         netconn_close(newconn);
         netconn_delete(newconn);
+        newconn = NULL;
       }
     }
   }
@@ -138,25 +153,38 @@ osStatus_t TcpEnqueueResponse(uint8_t* pData, uint16_t length)
     msg.Data[i] = pData[i];
   /* Determine if called from interrupt */
   uint32_t timeout = (__get_IPSR() != 0U) ? 0 : QUEUE_PUT_TIMEOUT;
-  return osMessageQueuePut(TcpTxQueueHandle, &msg, 0, timeout);
+  osStatus_t ret = osMessageQueuePut(TcpTxQueueHandle, &msg, 0, timeout);
+  if (osOK != ret)
+  {
+    // Error: queue is full
+  }
+  return ret;
 }
 /*-----------------------------------------------------------------------------------*/
 void TcpSendThread(void *arg)
 {
-  osStatus_t queueState;
-  GenericMessageType tcpTransmitBuffer;
+  size_t bytesWritten;
+  err_t writeError;
   while (1)
   {
-    while ((queueState = osMessageQueueGet(TcpTxQueueHandle, &tcpTransmitBuffer, NULL, 0xffff)) != osOK);
-    if (newconn->type != NETCONN_INVALID)
-      netconn_write(newconn, tcpTransmitBuffer.Data, tcpTransmitBuffer.Datalen, NETCONN_COPY);
+    WaitAndDrainQueue(tcpTxBuffer, RESPONSE_BUFFER_SIZE, &tcpTxLength, TcpTxQueueHandle);
+    if ((NULL != newconn) && (newconn->type != NETCONN_INVALID))
+    {
+      netconn_set_sendtimeout(newconn, SEND_TIMEOUT);
+      writeError = netconn_write_partly(newconn, tcpTxBuffer, tcpTxLength,
+                                        NETCONN_COPY, &bytesWritten);
+      if (ERR_OK != writeError)
+      {
+        tcpConnectionError = 1;
+      }
+    }
   }
 }
 /*-----------------------------------------------------------------------------------*/
 void TcpServerInit(void* argument)
 {
-  sys_thread_new("tcpserver_thread", TcpServerThread, argument, (configMINIMAL_STACK_SIZE * 32 + 1024), TCPECHO_THREAD_PRIO);
-  sys_thread_new("TCP send thread", TcpSendThread, NULL, configMINIMAL_STACK_SIZE * 32, TCPSEND_THREAD_PRIO);
+  sys_thread_new("tcpserver_thread", TcpServerThread, argument, (configMINIMAL_STACK_SIZE * 24), TCPECHO_THREAD_PRIO);
+  sys_thread_new("TCP send thread", TcpSendThread, NULL, configMINIMAL_STACK_SIZE * 10, TCPSEND_THREAD_PRIO);
 }
 /*-----------------------------------------------------------------------------------*/
 

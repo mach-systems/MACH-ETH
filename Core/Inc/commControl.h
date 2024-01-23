@@ -10,7 +10,10 @@
 #ifndef INC_COMMCONTROL_H_
 #define INC_COMMCONTROL_H_
 
+
 #include <stdint.h>
+#include <cmsis_os2.h>
+
 
 /* LIN errors */
 #define PROTOCOL_ERR_LIN_CHECKSUM           0xB0    /* Bad checksum received */
@@ -25,9 +28,11 @@
 #define PROTOCOL_ERR_CAN_AC                 0xC3    /* CAN Acknowledge error */
 #define PROTOCOL_ERR_CAN_STUFF              0xC4    /* CAN Bit Stuff error */
 
-#define COMM_CHANNEL_COUNT      2   /* We have two communication channels: USB and TCP */
-#define TCP_CHANNEL             0   /* Communication channel number and index */
-#define USB_CHANNEL             1   /*  to the global variables array         */
+#define COMM_CHANNEL_COUNT              2   /* We have two communication channels: USB and TCP */
+#define TCP_CHANNEL                     0   /* Communication channel number and index */
+#define USB_CHANNEL                     1   /*  to the global variables array         */
+
+#define RESPONSE_BUFFER_SIZE            3200
 
 /*
  * Callback for TCP layer for when packet is received.
@@ -47,6 +52,13 @@ void UsbDataReceived(uint8_t* pData, uint16_t length);
  * parseDataprotocol() called from here.
  */
 void UsbProtocolTask(void* arg);
+
+/*
+ * Blocking wait until queue has any data, then take all the available elements
+ * from it. Suppose that element is of the type GenericMessageType!
+ */
+void WaitAndDrainQueue(uint8_t* pDest, uint16_t size, uint16_t* pResSize,
+                       osMessageQueueId_t queueHandle);
 
 
 

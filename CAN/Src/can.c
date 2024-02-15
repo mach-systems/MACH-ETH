@@ -105,7 +105,14 @@ uint8_t ConfigureCAN(uint8_t channel)
     pfdcan->Init.RxBuffersNbr = 0;
     pfdcan->Init.TxFifoQueueMode = FDCAN_TX_FIFO_OPERATION;
     pfdcan->Init.ExtFiltersNbr = 0;
-    pfdcan->Init.MessageRAMOffset = 0;
+    if (CAN1_NUM == channel)
+    {
+        pfdcan->Init.MessageRAMOffset = 0;
+    }
+    else    // CAN2_NUM == channel
+    {
+        pfdcan->Init.MessageRAMOffset = 1280;
+    }
     pfdcan->Init.RxFifo0ElmtsNbr = RX_FIFO_SIZE;
     pfdcan->Init.AutoRetransmission = ENABLE;
     pfdcan->Init.TxFifoQueueElmtsNbr = TX_FIFO_SIZE;

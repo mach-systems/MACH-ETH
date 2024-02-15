@@ -19,7 +19,7 @@
 #define CAN1_NUM                        0
 #define CAN2_NUM                        1
 
-#define RX_FIFO_SIZE                    64
+#define RX_FIFO_SIZE                    32
 #define TX_FIFO_SIZE                    32
 
 #define	MESSAGE_HEADER_SIZE             5

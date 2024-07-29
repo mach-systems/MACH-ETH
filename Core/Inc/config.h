@@ -103,6 +103,12 @@
 #define VERSION_MINOR       0x01
 #define VERSION_MAJOR       0x01
 
+#ifdef Bootloader
+#define SIGNATURE_VALUE             0x55aa55aa55aa55aa
+#define PRODUCT_ID                  8
+#define VARIANT_ID                  1
+#endif /* Bootloader */
+
 #define RESPONSE_SUCCESS    0
 #define RESPONSE_CHKSM_ERR  1
 #define RESPONSE_ID_ERR     2

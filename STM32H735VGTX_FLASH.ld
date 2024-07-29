@@ -54,9 +54,21 @@ SECTIONS
   /* The startup code into "ROM" Rom type memory */
   .isr_vector :
   {
-    . = ALIGN(4);
+    . = ALIGN(8);
     KEEP(*(.isr_vector)) /* Startup code */
-    . = ALIGN(4);
+    . = ALIGN(8);
+  } >ROM
+
+  .product : 
+  {
+    *(.product)
+    KEEP (*(.product))
+  } >ROM
+
+  .variant : 
+  {
+    *(.variant)
+    KEEP (*(.variant))
   } >ROM
 
   /* The program code and other data into "ROM" Rom type memory */
@@ -82,7 +94,7 @@ SECTIONS
   *(.version)
   KEEP (*(.version))
   } >FWVERSION
-  
+
   .signature :
   {
   . = ALIGN(4);

@@ -464,6 +464,11 @@ void HAL_FDCAN_ErrorCallback(FDCAN_HandleTypeDef *hfdcan) {
                 break;
         }
     }
+
+    if (1U == ProtocolStatus.BusOff)
+    {
+        CLEAR_BIT(hfdcan->Instance->CCCR, FDCAN_CCCR_INIT);
+    }
 }
 
 uint8_t IntToDLC(uint8_t dataLength, uint32_t *pDLC)

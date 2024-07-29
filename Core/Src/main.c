@@ -158,15 +158,18 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define CAN_MAX_DATALEN     64
-#define LIN_TX_DATA_SIZE    4
+#define CAN_MAX_DATALEN         64
+#define LIN_TX_DATA_SIZE        4
 
 #define TEST_UART
 
 //#define TEST_CAN
 
-#define SYSTEM_BOOT_ADDR    0x1FF09800
-#define HTTP_BOOT_ADDR      0x08000000
+#define SYSTEM_BOOT_ADDR        0x1FF09800
+#define HTTP_BOOT_ADDR          0x08000000
+
+#define SHARED_RAM_USB_JUMP     11  /* Address in the shared memory section that is used when
+                                       jumping to System Bootloader */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -292,6 +295,11 @@ void ledTest(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+  if (GetSharedData(SHARED_RAM_USB_JUMP) == 1)
+  {
+    SetSharedData(SHARED_RAM_USB_JUMP, 0);
+    jumpToBootloader(SYSTEM_BOOT_ADDR);
+  }
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -1242,7 +1250,11 @@ void StartDefaultTask(void *argument)
 
      UpdateTxFrameData(1, linTxData, LIN_TX_DATA_SIZE);
      if (BootloaderRequest == 1)
-       jumpToBootloader(SYSTEM_BOOT_ADDR);
+     {
+       USBD_DeInit(&hUsbDeviceHS);
+       SetSharedData(SHARED_RAM_USB_JUMP, 1);
+       HAL_NVIC_SystemReset();
+     }
      else if (BootloaderRequest == 2)
      {
        InitSharedParams();

@@ -3,6 +3,10 @@
  *
  *  Created on: 9. 8. 2021
  *      Author: petr_kolar
+ *
+ * Note that this module configures HFDCAN peripheral(s) from scratch, so that it may override
+ * some parameters that are configured in the CubeMX!
+ *
  */
 
 #ifndef INC_CAN_H_

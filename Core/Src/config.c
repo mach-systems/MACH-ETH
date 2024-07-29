@@ -25,7 +25,10 @@ uint16_t VirtAddVarTab[NB_OF_VAR];
 // Load address is 0x80bffe0
 const volatile uint16_t __attribute__((section(".version"))) FirmwareVersion  = VERSION_MINOR + (256 * VERSION_MAJOR);
 #ifdef Bootloader
-    const volatile uint64_t __attribute__((section(".signature"))) Signature = 0x55aa55aa55aa55aa;
+    const volatile uint64_t __attribute__((section(".signature"))) Signature = SIGNATURE_VALUE;
+    // Use two separate sections to ensure correct order
+    const uint8_t __attribute__((section(".product"))) ProductId = PRODUCT_ID;
+    const uint8_t __attribute__((section(".variant"))) VariantId = VARIANT_ID;
 #endif
 
 

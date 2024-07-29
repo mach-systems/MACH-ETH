@@ -202,12 +202,6 @@ uint8_t InitLin(LinInitStruct ConfLinSettings);
 void initLinScheduler(void);
 
 /*
- * Begin transmission of the frame (for the master only).
- * NOTE: this function cannot be used together with LinWriteToTxBuffer()
- */
-uint8_t LinTransmitFrameAsync(LIN_Frame* pFrame);
-
-/*
  * Timeout timer period elapsed.
  */
 void LinTimeoutTimerCallback(void);
@@ -333,8 +327,10 @@ uint8_t GetConfigurationLin(void);
 
 /*
  * Write Lin Frame to TX Buffer
+ * This assures that data length is set correctly depending on message ID (LIN v1.3).
  */
-uint8_t LinWriteToTxBuffer(uint8_t linId,uint8_t msgType,uint8_t chksumType, uint8_t length, uint8_t data[]);
+uint8_t LinWriteToTxBuffer(uint8_t linId, uint8_t msgType,uint8_t chksumType, uint8_t lengthParam,
+                           uint8_t data[]);
 
 /*
  * Set linStopChannelRequestFlag to true -> request to stop LIN is set

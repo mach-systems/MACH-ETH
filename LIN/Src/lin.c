@@ -24,8 +24,6 @@ uint8_t schedulerIndex;
 
 LinScheduler scheduler;
 
-/* Frame to send */
-LIN_Frame txFrame;
 uint8_t txFrameDataIndex;
 /* Data to receive (raw data) */
 uint8_t rxData[RX_BUFFER_LENGTH];
@@ -88,10 +86,6 @@ uint16_t counterLinBlinkGreen;
 bool ledLinRedBlink;
 bool ledLinGreenBlink;
 
-/* If true send frame asynchronous else send frame from TX buffer */
-/* Note: in this implementation, all frames should be set synchronously from TxFrameBuffer */
-uint8_t transmitAsyncSet;
-
 /* Timeout of receiving brake (in case of short of LIN to Vbat) */
 uint8_t breakTmrRunning;
 uint16_t breakTmrVal;
@@ -107,6 +101,12 @@ bool linEchoRx = true;
 uint8_t linChannelToTX = TCP_CHANNEL;
 
 bool linRun;
+
+/*
+ * Convert LIN ID to data length (as per LIN v1.3).
+ */
+static uint8_t linIdToDatalen(uint8_t id);
+
 
 extern CONFIGURATION_LIN configLin;
 
@@ -134,8 +134,6 @@ void SchedulerTimerCallback(void)
     LinDelay--;
     if (LinDelay == 0)
     {
-      // Note: asynchronous transmission cannot be used in this implementation
-      //LinTransmitFrameAsync(&scheduler.Row[schedulerIndex].Frame);
       LIN_Frame frame = scheduler.Row[schedulerIndex].Frame;
 
       if (LinWriteToTxBuffer(frame.ID, frame.Type, frame.ChecksumType, frame.Length, frame.Data))
@@ -223,46 +221,6 @@ void initLinScheduler(void)
   scheduler.NumberOfFrames = 1;
 }
 
-uint8_t LinTransmitFrameAsync(LIN_Frame* pFrame)
-{
-  uint8_t ret = 0;
-
-  if (!linIsTransmitting && !linReceiving)
-  {
-    transmitAsyncSet=1;
-    /* We can begin sending the data */
-    txFrame.ID = getParityIdentifier(pFrame->ID);
-    if (pFrame->Type == MASTER_RESPONSE)
-      memcpy((void*) txFrame.Data, pFrame->Data, pFrame->Length);
-
-    if (pFrame->Type == MASTER_REQUEST)
-      txFrame.ResponseLength = 0; /* No response yet */
-
-    txFrame.Length = pFrame->Length;
-    txFrame.Type = pFrame->Type;
-    txFrame.ChecksumType = pFrame->ChecksumType;
-    if (pFrame->ChecksumType == CHECKSUM_CLASSICAL || pFrame->ID == 0x3c || pFrame->ID == 0x3d || pFrame->ID == 0x3e || pFrame->ID == 0x3f)
-    {
-      txFrame.Checksum = calcChecksum(pFrame->Data, pFrame->Length,
-                                        CHECKSUM_CLASSICAL, pFrame->ID);
-    }
-    else
-    {
-      txFrame.Checksum = calcChecksum(pFrame->Data, pFrame->Length,
-                                        pFrame->ChecksumType, pFrame->ID);
-    }
-
-    /* Reset the index for receiving the data */
-    rxDataIndex = 0;
-    linTransmitState = STATE_SYNC_BREAK;
-    linIsTransmitting = 1;  /* Transmission in progress */
-    linStopTx = 0;
-    LinUartEnableTxInterrupt();
-    ret = 1;
-  }
-  return ret;
-}
-
 void LinTimeoutTimerCallback(void)
 {
   if (breakTmrRunning)
@@ -325,7 +283,6 @@ void LinTimeoutTimerCallback(void)
           }
         }
 
-        transmitAsyncSet=0;
         if (LinReadIndex != LinWriteIndex)
           LinReadIndex++;
 
@@ -560,16 +517,7 @@ uint8_t GetConfigurationLin(void)
 
 void LinTxCallback(void)
 {
-  LIN_Frame *txFrameToSend;
-  if (transmitAsyncSet)
-  {
-    txFrameToSend = &txFrame;
-  }
-  else
-  {
-    txFrameToSend = &TxFrameBuffer[LinReadIndex];
-  }
-
+  LIN_Frame *txFrameToSend = &TxFrameBuffer[LinReadIndex];
   if (LinSettings.DeviceMode == LIN_MODE_MASTER)
   {
     if (linStopTx) /* Stop transmitting (done or waiting for the response) */
@@ -578,8 +526,9 @@ void LinTxCallback(void)
       {
         linReceiving = 1;
         linIsTransmitting = 0;
-        if (LinSettings.AMLR == HARDCODED){
-          txFrameToSend->Length = txFrameToSend->ID & 0x20 ? (txFrameToSend->ID & 0x10 ? 8:4) : 2;
+        if (LinSettings.AMLR == HARDCODED)
+        {
+          txFrameToSend->Length = linIdToDatalen(txFrameToSend->ID);
         }
         calcAndUpdateTimeoutValue(txFrameToSend->Length);
         timeoutTimerStart();
@@ -818,34 +767,54 @@ int16_t LinGetFreeTx(void)
     return r - 1;
 }
 
-uint8_t LinWriteToTxBuffer(uint8_t linId,uint8_t msgType,uint8_t chksumType, uint8_t length, uint8_t data[])
+uint8_t LinWriteToTxBuffer(uint8_t linId, uint8_t msgType, uint8_t chksumType, uint8_t lengthParam,
+                           uint8_t data[])
 {
-    uint8_t i;
-    linLoopbackControl.ExpectedDataLength = 0;
-    linLoopbackControl.ReceivedDataLength = 0;
-
+    uint8_t ret = 0;
     if (LinGetFreeTx() >= 1)
     {
+      uint8_t i;
+      linLoopbackControl.ExpectedDataLength = 0;
+      linLoopbackControl.ReceivedDataLength = 0;
       TxFrameBuffer[LinWriteIndex].Type = msgType;
       TxFrameBuffer[LinWriteIndex].ID = getParityIdentifier(linId);
+      uint8_t length = (lengthParam > LIN_DATA_LENGTH) ? LIN_DATA_LENGTH : lengthParam;
       TxFrameBuffer[LinWriteIndex].Length = length;
       TxFrameBuffer[LinWriteIndex].ChecksumType = chksumType;
 
       if (msgType == MASTER_RESPONSE)
       {
-        for (i = 0; i < length; i++)
-        {
-          TxFrameBuffer[LinWriteIndex].Data[i] = data[i];
-        }
-        if ((linId == 0x3c) || (linId == 0x3d) || linId == 0x3e || linId == 0x3f)
-        {
-          TxFrameBuffer[LinWriteIndex].Checksum = calcChecksum(&data[0], length, CLASSICAL_CHECKSUM, linId);
-        }
-        else
-        {
-          TxFrameBuffer[LinWriteIndex].Checksum = calcChecksum(&data[0], length, chksumType, linId);
-        }
-
+          if (NULL != data)
+          {
+              for (i = 0; i < length; i++)
+              {
+                TxFrameBuffer[LinWriteIndex].Data[i] = data[i];
+              }
+              if (HARDCODED == LinSettings.AMLR)
+              {
+                  uint8_t newLength = linIdToDatalen(linId);
+                  if (newLength > TxFrameBuffer[LinWriteIndex].Length)
+                  {
+                      for (; i < newLength; i++)
+                      {
+                          TxFrameBuffer[LinWriteIndex].Data[i] = 0xff;
+                      }
+                  }
+                  TxFrameBuffer[LinWriteIndex].Length = newLength;
+              }
+              if ((linId == 0x3c) || (linId == 0x3d) || linId == 0x3e || linId == 0x3f)
+              {
+                TxFrameBuffer[LinWriteIndex].Checksum = calcChecksum(&data[0],
+                                                                     TxFrameBuffer[LinWriteIndex].Length,
+                                                                     CLASSICAL_CHECKSUM, linId);
+              }
+              else
+              {
+                TxFrameBuffer[LinWriteIndex].Checksum = calcChecksum(&data[0],
+                                                                     TxFrameBuffer[LinWriteIndex].Length,
+                                                                     chksumType, linId);
+              }
+          }
       }
 
       if (msgType == MASTER_REQUEST)
@@ -866,12 +835,9 @@ uint8_t LinWriteToTxBuffer(uint8_t linId,uint8_t msgType,uint8_t chksumType, uin
       {
         LinWriteIndex = 0;
       }
-      return 1;
+      ret = 1;
     }
-    else
-    {
-      return 0;
-    }
+    return ret;
 }
 
 void calcAndUpdateTimeoutValue(uint8_t numberOfBytes)
@@ -982,7 +948,8 @@ void LinLedTimerCallback(void)
     if (counterLinBlinkGreen >= GREEN_BLINK_DURATION*2)
       counterLinBlinkGreen = ledLinGreenBlink=0;
   }
-  else if (ledLinRedBlink)
+
+  if (ledLinRedBlink)
   {
     counterLinBlinkRed++;
     if (counterLinBlinkRed < RED_BLINK_DURATION)
@@ -1025,4 +992,10 @@ uint8_t blinkLedLin(uint8_t Led)
       break;
   }
   return 1;
+}
+
+uint8_t linIdToDatalen(uint8_t id)
+{
+    uint8_t id54 = ((id >> 4) & 0x3);   // Bits 4 and 5 of the ID
+    return (0 != (id54 & 0x2)) ? ((0 != (id54 & 0x1)) ? 8 : 4) : 2;
 }

@@ -78,14 +78,14 @@ uint8_t SetSharedData(uint8_t index, uint8_t data)
     SharedParameters.Checksum = 0;
     AddToCrc(&SharedParameters.Checksum, SharedParameters.Data, SHARED_DATA_LENGTH);
     // Needed when unaligned access was done and reset will happen right after this call
-    flushEcc(&SharedParameters.Checksum, 1);
+    flushEcc(&SharedParameters, sizeof(SharedParameters));
   }
   return ret;
 }
 
 void flushEcc(void* ptr, uint32_t bytes)
 {
-    if ((uint32_t) ptr > DTCM_START && (uint32_t) ptr < DTCM_END)
+    if ((uint32_t) ptr >= DTCM_START && (uint32_t) ptr < DTCM_END)
     {
         uint32_t* address = (uint32_t*) ((uint32_t) ptr & 0xfffffffc);
         uint32_t* end = (uint32_t*) (((uint32_t) ptr + bytes) & 0xfffffffc);

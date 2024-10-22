@@ -53,7 +53,7 @@ extern "C" {
 extern TIM_HandleTypeDef htim14;
 extern TIM_HandleTypeDef htim16;
 extern TIM_HandleTypeDef htim17;
-
+extern IWDG_HandleTypeDef hiwdg1;
 extern osMessageQueueId_t SpiTxQueueHandle;
 extern osMessageQueueId_t SpiRxQueueHandle;
 extern osMessageQueueId_t Spi2TxQueueHandle;
@@ -196,6 +196,8 @@ uint16_t GetAdcMeasurement(void);
 #define LED3_GREEN_OFF()        HAL_GPIO_WritePin(LED_3_GREEN_GPIO_Port, LED_3_GREEN_Pin, GPIO_PIN_SET)
 
 #define GET_5V_BRANCH_VOLTAGE() HAL_GPIO_ReadPin(ADC_5V_GPIO_Port, ADC_5V_Pin)
+
+#define WDG_REFRESH()               HAL_IWDG_Refresh(&hiwdg1)
 
 #define ADC_CONVERSION          (2.5 / 65536)
 #define IO_VALUE(x)             ((double) x * ADC_CONVERSION * 2 * 1000)

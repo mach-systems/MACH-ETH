@@ -183,6 +183,8 @@ ADC_HandleTypeDef hadc1;
 FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan3;
 
+IWDG_HandleTypeDef hiwdg1;
+
 SPI_HandleTypeDef hspi2;
 
 TIM_HandleTypeDef htim13;
@@ -253,6 +255,7 @@ static void MX_TIM7_Init(void);
 static void MX_TIM13_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_SPI2_Init(void);
+static void MX_IWDG1_Init(void);
 void StartDefaultTask(void *argument);
 extern void UsbProtocolTask(void *argument);
 
@@ -300,6 +303,8 @@ int main(void)
     SetSharedData(SHARED_RAM_USB_JUMP, 0);
     jumpToBootloader(SYSTEM_BOOT_ADDR);
   }
+  hiwdg1.Instance = IWDG1;
+  WDG_REFRESH();    // Watchdog might have been enabled by the bootloader
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -336,6 +341,7 @@ int main(void)
   MX_TIM13_Init();
   MX_ADC1_Init();
   MX_SPI2_Init();
+  MX_IWDG1_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET_LINEARITY, ADC_SINGLE_ENDED);
@@ -462,8 +468,9 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 3;
@@ -698,6 +705,35 @@ static void MX_FDCAN3_Init(void)
   /* USER CODE BEGIN FDCAN3_Init 2 */
 
   /* USER CODE END FDCAN3_Init 2 */
+
+}
+
+/**
+  * @brief IWDG1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_IWDG1_Init(void)
+{
+
+  /* USER CODE BEGIN IWDG1_Init 0 */
+
+  /* USER CODE END IWDG1_Init 0 */
+
+  /* USER CODE BEGIN IWDG1_Init 1 */
+#ifdef WATCHDOG_ENABLED
+  /* USER CODE END IWDG1_Init 1 */
+  hiwdg1.Instance = IWDG1;
+  hiwdg1.Init.Prescaler = IWDG_PRESCALER_32;
+  hiwdg1.Init.Window = 4095;
+  hiwdg1.Init.Reload = 3998;
+  if (HAL_IWDG_Init(&hiwdg1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN IWDG1_Init 2 */
+#endif
+  /* USER CODE END IWDG1_Init 2 */
 
 }
 
@@ -1206,6 +1242,7 @@ void StartDefaultTask(void *argument)
   /* init code for USB_DEVICE */
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 5 */
+  WDG_REFRESH();
   /* Initialize the TCP server thread */
   TcpServerInit(argument);
   /* Set up LIN to send status of dipswitches */
@@ -1261,7 +1298,7 @@ void StartDefaultTask(void *argument)
        SetSharedData(0, 1);
        jumpToBootloader(HTTP_BOOT_ADDR);
      }
-
+     WDG_REFRESH();
      osDelay(100);
    }
   /* USER CODE END 5 */

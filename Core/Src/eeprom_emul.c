@@ -74,6 +74,7 @@ uint16_t EE_Init(void)
   pEraseInit.NbSectors = 1;
   pEraseInit.VoltageRange = VOLTAGE_RANGE;
 
+  WDG_REFRESH();
   /* Check for invalid header states and repair if necessary */
   switch (PageStatus0)
   {
@@ -447,6 +448,7 @@ static HAL_StatusTypeDef EE_Format(void)
   pEraseInit.NbSectors = 1;
   pEraseInit.VoltageRange = VOLTAGE_RANGE;
 
+  WDG_REFRESH();
   /* Erase Page0 */
   if (!EE_VerifyPageFullyErased(PAGE0_BASE_ADDRESS))
   {
@@ -467,6 +469,7 @@ static HAL_StatusTypeDef EE_Format(void)
     return FlashStatus;
   }
 
+  WDG_REFRESH();
   pEraseInit.Sector = PAGE1_ID;
   /* Erase Page1 */
   if (!EE_VerifyPageFullyErased(PAGE1_BASE_ADDRESS))
